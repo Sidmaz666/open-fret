@@ -146,6 +146,7 @@ def generate_sequences(parsed_track):
     for time, type, pitch, s, f in midi_events:
         delta = time - last_time
         if delta > 0:
+            # Shift token - keeps both sequences in sync
             shift_token = f"TS_{delta}"
             midi_seq.append(shift_token)
             tab_seq.append(shift_token)
@@ -153,9 +154,9 @@ def generate_sequences(parsed_track):
         
         if type == "ON":
             midi_seq.append(f"NO_{pitch}")
-            tab_seq.append(f"TAB_{s}_{f}")
-        else:
-            midi_seq.append(f"NF_{pitch}")
+            # Use the format the user wants to see: Fret.String
+            tab_seq.append(f"{f}.{s}")
+        # We ignore OFF events for the sequence content to keep 1-to-1 mapping
     
     return midi_seq, tab_seq
 

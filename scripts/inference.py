@@ -30,27 +30,24 @@ def midi_to_tokens(midi_path, target_res=480):
     events = []
     for note in notes:
         start_tick = int(round(pm.time_to_tick(note.start) * res_scale))
-        end_tick = int(round(pm.time_to_tick(note.end) * res_scale))
         events.append((start_tick, "ON", note.pitch))
-        events.append((end_tick, "OFF", note.pitch))
     
-    events.sort(key=lambda x: (x[0], 0 if x[1] == "OFF" else 1))
+    events.sort(key=lambda x: x[0])
     
     tokens = []
     last_time = 0
     for time, type, pitch in events:
+        if type == "OFF": continue # We only care about note starts
+        
         delta = time - last_time
         if delta > 0:
-            # Quantize delta to nearest 10 to match clean AlphaTex ticks
+            # Quantize delta to nearest 10
             q_delta = int(round(delta / 10) * 10)
             if q_delta > 0:
                 tokens.append(f"TS_{q_delta}")
-                last_time += q_delta # Keep track of quantized timeline
+                last_time += q_delta
         
-        if type == "ON":
-            tokens.append(f"NO_{pitch}")
-        else:
-            tokens.append(f"NF_{pitch}")
+        tokens.append(f"NO_{pitch}")
             
     return tokens
 
