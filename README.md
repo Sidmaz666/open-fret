@@ -99,8 +99,6 @@ Open-Fret is trained on:
 - **[DadaGP](https://github.com/dada-bots/dadaGP)**: A massive symbolic dataset of ~26k GuitarPro songs.
 - **[SynthTab](https://github.com/yongyizang/SynthTab)**: Large-scale synthesized guitar tablature.
 
-For more details on data preparation, see [DATASET.md](./DATASET.md).
-
 ---
 
 ## 🗺️ Roadmap
