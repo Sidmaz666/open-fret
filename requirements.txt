@@ -1,0 +1,15 @@
+datasets
+huggingface_hub
+pretty_midi
+mido
+tokenizers
+sentencepiece
+numpy
+pandas
+tqdm
+torch
+transformers
+accelerate
+evaluate
+scikit-learn
+PyGuitarPro==0.6
