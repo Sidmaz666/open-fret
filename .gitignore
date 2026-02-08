@@ -1,0 +1,13 @@
+
+dataset/
+models/
+__pycache__/
+*.mid
+*.zip
+*.json
+*.txt
+.env/
+checkpoints/
+wandb/
+GOAL.md 
+DATASET.md 
