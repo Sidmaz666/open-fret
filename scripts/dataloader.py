@@ -20,13 +20,13 @@ class TabDataset(Dataset):
         file_path = os.path.join(self.data_dir, self.file_names[idx])
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                data_list = json.load(f)
-                # For now, we just take the first track/segment if multiple
-                data = data_list[0]
+                data = json.load(f)
                 
-                midi_text = " ".join(data['midi']) + " " + self.tokenizer.eos_token
-                tab_text = " ".join(data['tab']) + " " + self.tokenizer.eos_token
+                midi_tokens = data['midi']
+                tab_tokens = data['tab']
                 
+                midi_text = " ".join(midi_tokens) + " " + self.tokenizer.eos_token
+                tab_text = " ".join(tab_tokens) + " " + self.tokenizer.eos_token
                 # Tokenize
                 inputs = self.tokenizer(
                     midi_text, 
@@ -66,11 +66,11 @@ def get_dataloader(split, data_dir, tokenizer_path, batch_size=8, max_length=512
 
 if __name__ == "__main__":
     # Test loading
-    TOKENIZER_PATH = "dataset/processed/tokenizer.model"
+    TOKENIZER_DIR = "dataset/processed/tab_tokenizer"
     DATA_DIR = "dataset/processed/individual"
-    if os.path.exists(TOKENIZER_PATH):
+    if os.path.exists(TOKENIZER_DIR):
         try:
-            loader = get_dataloader("val", DATA_DIR, "dataset/processed/", batch_size=2)
+            loader = get_dataloader("val", DATA_DIR, TOKENIZER_DIR, batch_size=2)
             batch = next(iter(loader))
             print("Batch keys:", batch.keys())
             print("Input shape:", batch['input_ids'].shape)

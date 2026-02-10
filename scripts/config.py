@@ -3,15 +3,15 @@ from transformers import T5Config
 def get_tiny_tab_config(vocab_size=4000):
     """
     Returns a T5 configuration optimized for MIDI-to-Tab.
-    Based on GOAL.md: d_model=128, d_ff=1024, 3 layers, 4 heads.
+    Based on the paper: d_model=128, d_ff=1024, 3 layers, 4 heads.
     """
     config = T5Config(
         vocab_size=vocab_size,
-        d_model=256,
-        d_ff=2048,
-        num_layers=6,
-        num_decoder_layers=6,
-        num_heads=8,
+        d_model=128,
+        d_ff=1024,
+        num_layers=3,
+        num_decoder_layers=3,
+        num_heads=4,
         relative_attention_num_buckets=32,
         dropout_rate=0.1,
         layer_norm_epsilon=1e-6,

@@ -30,15 +30,15 @@ def midi_to_tokens(midi_path, target_res=480):
     events = []
     for note in notes:
         start_tick = int(round(pm.time_to_tick(note.start) * res_scale))
+        end_tick = int(round(pm.time_to_tick(note.end) * res_scale))
         events.append((start_tick, "ON", note.pitch))
+        events.append((end_tick, "OFF", note.pitch))
     
-    events.sort(key=lambda x: x[0])
+    events.sort(key=lambda x: (x[0], 0 if x[1] == "OFF" else 1))
     
     tokens = []
     last_time = 0
     for time, type, pitch in events:
-        if type == "OFF": continue # We only care about note starts
-        
         delta = time - last_time
         if delta > 0:
             # Quantize delta to nearest 10
@@ -47,7 +47,10 @@ def midi_to_tokens(midi_path, target_res=480):
                 tokens.append(f"TS_{q_delta}")
                 last_time += q_delta
         
-        tokens.append(f"NO_{pitch}")
+        if type == "ON":
+            tokens.append(f"NO_{pitch}")
+        else:
+            tokens.append(f"NF_{pitch}")
             
     return tokens
 
@@ -66,8 +69,13 @@ def run_inference(midi_path, model_dir):
 
     print(f"Input MIDI Tokens: {' '.join(midi_tokens[:30])}...")
 
-    input_text = " ".join(midi_tokens[:1024]) # Increase context if possible
-    inputs = tokenizer(input_text, return_tensors="pt", truncation=True, max_length=1024).to(device)
+    # ADDED CONDITIONING (from paper): Standard tuning and no capo
+    # Without these, the model will see a sequence format it didn't strictly train on.
+    midi_text = " ".join(midi_tokens[:1024])
+    conditioning = "CAPO_0 TUNING_76_71_67_62_57_52 "
+    full_input = conditioning + midi_text
+    
+    inputs = tokenizer(full_input, return_tensors="pt", truncation=True, max_length=1024).to(device)
 
     with torch.no_grad():
         outputs = model.generate(
@@ -79,7 +87,17 @@ def run_inference(midi_path, model_dir):
             num_return_sequences=1
         )
 
-    decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    decoded_tokens = tokenizer.decode(outputs[0], skip_special_tokens=True).split()
+    
+    # Paper Post-Processing: Neighbor Search
+    try:
+        from post_process import neighbor_search
+        final_tokens = neighbor_search(decoded_tokens, midi_tokens)
+        decoded = " ".join(final_tokens)
+    except Exception as e:
+        print(f"Warning: Post-processing failed: {e}")
+        decoded = " ".join(decoded_tokens)
+        
     return decoded
 
 def main():

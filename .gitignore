@@ -9,4 +9,5 @@ __pycache__/
 checkpoints/
 wandb/
 GOAL.md 
-DATASET.md 
+DATASET.md
+train_log.txt

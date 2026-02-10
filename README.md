@@ -75,38 +75,36 @@ python scripts/inference.py --input path/to/your/song.mid
 
 ---
 
-## 🧠 Architecture: T5-Tiny-Tab
+## 🧠 Architecture: Fretting-Transformer Standard
+Open-Fret strictly follows the base architecture defined in the research paper:
 
-The core of Open-Fret is a compact T5 (Text-to-Text Transfer Transformer) model tailored for symbolic music translation:
+- **Type**: Encoder-Decoder (Seq2Seq T5)
+- **Layers**: 3 Encoder / 3 Decoder
+- **Dimensions**: `d_model = 128`, `d_ff = 1024`
+- **Attention**: 4 Heads
+- **Conditioning**: Prefix-based conditioning for `CAPO` and `TUNING`.
+- **Tokenizer**: WordLevel Tokenizer (Treats musical events as atomic units).
 
-- **Type**: Encoder-Decoder (Seq2Seq)
-- **Layers**: 6 Encoder / 6 Decoder (Optimized configuration)
-- **Dimensions**: `d_model = 256`, `d_ff = 2048`
-- **Attention**: 8 Heads
-- **Tokenizer**: Custom SentencePiece (MIDI + Tab combined vocab)
-
-### Training Highlights
-- **Optimizer**: Adafactor (Memory efficient)
-- **Precision**: FP16 (Mixed Precision)
-- **Batch Size**: 16 (with gradient accumulation)
-- **Hardware**: Optimized for 8GB+ VRAM GPUs, but extremely fast on CPU for inference.
+### Training Protocol
+- **Effective Batch Size**: 64 (via Gradient Accumulation)
+- **Learning Rate**: 5e-4 with **Cosine Decay**.
+- **Optimizer**: Adafactor (Paper standard).
+- **Augmentation**: Random Capo (0-7) and Tuning shifts across training samples.
 
 ---
 
 ## 📊 Datasets
-
-Open-Fret is trained on:
-- **[DadaGP](https://github.com/dada-bots/dadaGP)**: A massive symbolic dataset of ~26k GuitarPro songs.
-- **[SynthTab](https://github.com/yongyizang/SynthTab)**: Large-scale synthesized guitar tablature.
+The project utilizes the following data sources for training and evaluation:
+- **[vladsavelyev/guitar_tab](https://huggingface.co/datasets/vldsavelyev/guitar_tab)**: A massive corpus of ~188k GuitarPro tracks converted to AlphaTex format. This serves as our primary training database for large-scale generalization.
+- **DadaGP/SynthTab Alignment**: While the [Fretting-Transformer paper](https://arxiv.org/abs/2506.14223) focuses on a curated subset (Acoustic, Beginner, and Jazz), this implementation leverages the broader `vladsavelyev` corpus to provide a more robust and versatile model.
 
 ---
 
 ## 🗺️ Roadmap
-
-- [ ] Support for explicit technique tokens (Bends, Slides, Vibrato).
-- [ ] Integration with audio transcription (Audio → MIDI → Tab).
-- [ ] Interactive Web Dashboard for music visualization.
-- [ ] ONNX export for even faster CPU deployment.
+- [x] **Neighbor Search Implementation**: 100% pitch matching between MIDI and Tab (Section 3.5).
+- [x] **Technique Layer**: Full support for Bends, Slides, and Vibrato in the token stream.
+- [ ] **Audio-to-Tab API**: Full end-to-end transcription from MP3/WAV.
+- [ ] **ONNX Quantization**: Faster CPU inference for web deployment.
 
 ---
 

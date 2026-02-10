@@ -19,14 +19,13 @@ def generate_vocab():
         file_path = os.path.join(input_dir, filename)
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                data_list = json.load(f)
-                for item in data_list:
-                    # Collect MIDI tokens
-                    if 'midi' in item:
-                        unique_tokens.update(item['midi'])
-                    # Collect Tab tokens
-                    if 'tab' in item:
-                        unique_tokens.update(item['tab'])
+                data = json.load(f)
+                # Collect MIDI tokens
+                if 'midi' in data:
+                    unique_tokens.update(data['midi'])
+                # Collect Tab tokens
+                if 'tab' in data:
+                    unique_tokens.update(data['tab'])
         except Exception as e:
             continue
 

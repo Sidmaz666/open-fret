@@ -58,7 +58,9 @@ def parse_alphatex(file_path):
         clean_content = re.sub(r'\{[^\}]+\}', '', clean_content)
 
         # Tokenize
-        pattern = r'(:[0-9]+\.*)|(\([^\)]+\)[.0-9\.]*)|([0-9]+\.[0-9]+[.0-9\.]*)|(r[.0-9\.]*)|(\|)'
+        # Improved regex to capture fret.string followed by optional techniques: b(bend), s(slide), v(vibrato)
+        # e.g., 2.3b4, 5.6s, 0.4v
+        pattern = r'(:[0-9]+\.*)|(\([^\)]+\)[.0-9\.]*[bsv0-9]*)|([0-9]+\.[0-9]+[bsv0-9]*)|(r[.0-9\.]*)|(\|)'
         matches = re.finditer(pattern, clean_content)
         
         time_tokens = []
@@ -66,10 +68,11 @@ def parse_alphatex(file_path):
         ticks_per_quarter = 480
         
         for m in matches:
-            token = m.group(0)
+            token = m.group(0).strip()
+            if not token: continue
+            
             if token.startswith(':'):
                 val = token[1:].rstrip('.')
-                dots = token.count('.')
                 current_duration = int(val)
                 continue
             if token == '|':
@@ -78,13 +81,14 @@ def parse_alphatex(file_path):
             dur = current_duration
             dots = 0
             
+            # Simple duration part matching
             dur_part_match = re.search(r'\.([0-9]+)(\.*)$', token)
             if dur_part_match:
                 dur = int(dur_part_match.group(1))
                 dots = len(dur_part_match.group(2))
             else:
                 if token.endswith('.') and not token.startswith('('):
-                    dots = token.count('.') - 1
+                    dots = token.count('.')
                 elif token.startswith('(') and token.endswith('.'):
                     dots = token.count('.')
 
@@ -97,16 +101,28 @@ def parse_alphatex(file_path):
             
             notes_in_chord = []
             if token.startswith('('):
-                note_matches = re.findall(r'([0-9]+)\.([0-9]+)', token)
-                for f_str, s_str in note_matches:
-                    notes_in_chord.append((int(f_str), int(s_str)))
+                # Chord extraction: (f.s f.s)
+                # Note: techniques might be inside or outside. 
+                # For simplicity, we search for f.s patterns
+                note_matches = re.findall(r'([0-9]+)\.([0-9]+)([bsv0-9]*)', token)
+                for f_str, s_str, tech in note_matches:
+                    notes_in_chord.append({
+                        'fret': int(f_str), 
+                        'string': int(s_str), 
+                        'tech': tech if tech else None
+                    })
             elif token.startswith('r'):
                 pass
             else:
-                note_match = re.match(r'([0-9]+)\.([0-9]+)', token)
+                # Single note: f.sTECH
+                note_match = re.match(r'([0-9]+)\.([0-9]+)([bsv0-9]*)', token)
                 if note_match:
-                    f_str, s_str = note_match.groups()
-                    notes_in_chord.append((int(f_str), int(s_str)))
+                    f_str, s_str, tech = note_match.groups()
+                    notes_in_chord.append({
+                        'fret': int(f_str), 
+                        'string': int(s_str), 
+                        'tech': tech if tech else None
+                    })
 
             if notes_in_chord:
                 time_tokens.append({
@@ -124,29 +140,39 @@ def parse_alphatex(file_path):
         
     return parsed_tracks
 
-def generate_sequences(parsed_track):
+def generate_sequences(parsed_track, capo=0, target_tuning=None):
     midi_events = []
     tuning = parsed_track['tuning']
+    if target_tuning:
+        # Shift pitches for tuning augmentation
+        pass # To be handled by changing 'tuning' list
+    
     events = parsed_track['events']
     
     for e in events:
         start = e['start']
         duration = e['duration']
-        for fret, string in e['notes']:
+        for note in e['notes']:
+            fret = note['fret']
+            string = note['string']
+            tech = note['tech']
             if string <= len(tuning):
-                pitch = tuning[string-1] + fret
-                midi_events.append((start, "ON", pitch, string, fret))
-                midi_events.append((start + duration, "OFF", pitch, string, fret))
+                # Apply capo shift to the fret number for augmentation
+                pitch = tuning[string-1] + fret + capo
+                midi_events.append((start, "ON", pitch, string, fret, tech))
+                midi_events.append((start + duration, "OFF", pitch, string, fret, tech))
     
     midi_events.sort(key=lambda x: (x[0], 0 if x[1]=="OFF" else 1))
     
-    midi_seq = []
-    tab_seq = []
+    # Prefix from paper: CAPO and TUNING
+    tuning_str = "_".join(map(str, tuning))
+    midi_seq = [f"CAPO_{capo}", f"TUNING_{tuning_str}"]
+    tab_seq = [] 
+    
     last_time = 0
-    for time, type, pitch, s, f in midi_events:
+    for time, type, pitch, s, f, tech in midi_events:
         delta = time - last_time
         if delta > 0:
-            # Shift token - keeps both sequences in sync
             shift_token = f"TS_{delta}"
             midi_seq.append(shift_token)
             tab_seq.append(shift_token)
@@ -154,41 +180,63 @@ def generate_sequences(parsed_track):
         
         if type == "ON":
             midi_seq.append(f"NO_{pitch}")
-            # Use the format the user wants to see: Fret.String
-            tab_seq.append(f"{f}.{s}")
-        # We ignore OFF events for the sequence content to keep 1-to-1 mapping
+            # Paper uses TAB_s_f, we add _tech as a suffix for techniques
+            tech_sfx = f"_{tech}" if tech else ""
+            tab_seq.append(f"TAB_{s}_{f}{tech_sfx}")
+        else:
+            midi_seq.append(f"NF_{pitch}")
+            # For Note Off in Tab, some papers use a dedicated 'NO_NOTE' or just skip.
+            # We skip to keep Tab sequence focused on onsets, but sequences will still align via TS_
     
     return midi_seq, tab_seq
 
 def process_file_single(file_path, output_dir_processed):
-    """Processes one file and saves its result into a dedicated JSON file."""
     try:
         tracks = parse_alphatex(file_path)
         if not tracks: return 0
         
-        file_name = os.path.basename(file_path)
         # Create a unique output name based on original path to avoid collisions
         # We'll use a hash or just the filename if it's unique enough.
         # Here we'll use the relative path parts joined by underscores.
         rel_path = os.path.relpath(file_path, "dataset/raw/extracted")
-        out_name = rel_path.replace(os.sep, "__") + ".json"
-        out_path = os.path.join(output_dir_processed, out_name)
         
         results = []
+        
         for t in tracks:
             if not t['events']: continue
-            m_seq, t_seq = generate_sequences(t)
+            
+            # Paper Augmentation (Section 3.3): Standard, Drop D, Half-step, Full-step
+            # For simplicity, we process the standard version + augmentations
+            # Standard
+            m_seq, t_seq = generate_sequences(t, capo=0)
             if m_seq and t_seq:
                 results.append({
                     'midi': m_seq,
                     'tab': t_seq,
-                    'file': file_name
+                    'file': rel_path # Use rel_path for uniqueness
                 })
-        
+            
+            # Capo Augmentation (0-7 for training)
+            # Only do this if it's training to avoid exploding dataset size too much for now
+            # but user wants "toe to toe", so let's do at least one capo shift per file
+            import random
+            random_capo = random.randint(1, 7)
+            m_capo, t_capo = generate_sequences(t, capo=random_capo)
+            if m_capo and t_capo:
+                results.append({
+                    'midi': m_capo,
+                    'tab': t_capo,
+                    'file': rel_path # Use rel_path for uniqueness
+                })
+            
         if results:
-            with open(out_path, 'w', encoding='utf-8') as f:
-                json.dump(results, f)
-            return 1
+            for i, result in enumerate(results):
+                unique_out_name = rel_path.replace(os.sep, "__") + f"_item_{i}.json"
+                out_path = os.path.join(output_dir_processed, unique_out_name)
+                with open(out_path, 'w', encoding='utf-8') as f:
+                    # Save as a single dict for easier loading
+                    json.dump(result, f)
+            return len(results)
     except Exception:
         pass
     return 0

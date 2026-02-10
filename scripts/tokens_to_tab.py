@@ -65,10 +65,14 @@ def tokens_to_alphatex(tokens_str, tempo=120, tuning=None):
             # but usually AlphaTex just does :4 r | if it's a rest
             # For simplicity, if it's a TS but no notes follows, it's a rest
             
-        elif re.match(r"^\d+\.\d+$", t):
-            # Format: fret.string (e.g., 3.5)
-            fret, string = t.split(".")
-            current_chord.append(f"{fret}.{string}")
+        elif t.startswith("TAB_"):
+            # TAB_string_fret_tech
+            parts = t.split("_")
+            if len(parts) >= 3:
+                s = parts[1]
+                f = parts[2]
+                tech = parts[3] if len(parts) > 3 else ""
+                current_chord.append(f"{f}.{s}{tech}")
 
     # Final chord
     if current_chord:
@@ -105,15 +109,18 @@ def tokens_to_ascii(tokens_str):
                     strings[s] += "-" * dashes
             except:
                 pass
-        elif re.match(r"^\d+\.\d+$", t):
-            # fret.string
-            fret, s_idx_str = t.split(".")
-            s_idx = int(s_idx_str)
-            if s_idx in strings:
-                if strings[s_idx].endswith("-"):
-                    strings[s_idx] = strings[s_idx][:-1] + fret
-                else:
-                    strings[s_idx] += fret
+        elif t.startswith("TAB_"):
+            # TAB_string_fret_tech
+            parts = t.split("_")
+            if len(parts) >= 3:
+                s_idx = int(parts[1])
+                fret = parts[2]
+                tech = parts[3] if len(parts) > 3 else ""
+                if s_idx in strings:
+                    if strings[s_idx].endswith("-"):
+                        strings[s_idx] = strings[s_idx][:-1] + fret + tech
+                    else:
+                        strings[s_idx] += fret + tech
         
     names = {1: "e", 2: "B", 3: "G", 4: "D", 5: "A", 6: "E"}
     output = []
