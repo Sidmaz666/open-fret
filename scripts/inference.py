@@ -41,8 +41,7 @@ def midi_to_tokens(midi_path, target_res=480):
     for time, type, pitch in events:
         delta = time - last_time
         if delta > 0:
-            # Quantize delta to nearest 10
-            q_delta = int(round(delta / 10) * 10)
+            q_delta = int(round(delta))
             if q_delta > 0:
                 tokens.append(f"TS_{q_delta}")
                 last_time += q_delta
@@ -70,9 +69,9 @@ def run_inference(midi_path, model_dir):
     print(f"Input MIDI Tokens: {' '.join(midi_tokens[:30])}...")
 
     # ADDED CONDITIONING (from paper): Standard tuning and no capo
-    # Without these, the model will see a sequence format it didn't strictly train on.
+    # 64 59 55 50 45 40 is the standard guitar tuning MIDI numbers
     midi_text = " ".join(midi_tokens[:1024])
-    conditioning = "CAPO_0 TUNING_76_71_67_62_57_52 "
+    conditioning = "CAPO_0 TUNING_64_59_55_50_45_40 "
     full_input = conditioning + midi_text
     
     inputs = tokenizer(full_input, return_tensors="pt", truncation=True, max_length=1024).to(device)
@@ -80,11 +79,12 @@ def run_inference(midi_path, model_dir):
     with torch.no_grad():
         outputs = model.generate(
             **inputs, 
-            max_length=1024,
-            do_sample=True,
-            top_p=0.95,
+            max_new_tokens=512, # Enough for most transcriptions
+            do_sample=True, # Sampling usually better for diversity
+            top_p=0.9,
             temperature=0.7,
-            num_return_sequences=1
+            num_return_sequences=1,
+            early_stopping=True
         )
 
     decoded_tokens = tokenizer.decode(outputs[0], skip_special_tokens=True).split()
@@ -95,7 +95,6 @@ def run_inference(midi_path, model_dir):
         final_tokens = neighbor_search(decoded_tokens, midi_tokens)
         decoded = " ".join(final_tokens)
     except Exception as e:
-        print(f"Warning: Post-processing failed: {e}")
         decoded = " ".join(decoded_tokens)
         
     return decoded
@@ -106,16 +105,18 @@ def main():
     parser.add_argument("--model", type=str, default="models/tiny-tab-v1/final", help="Path to trained model directory")
     args = parser.parse_args()
 
+    if not os.path.exists(args.model):
+        print(f"Error: Model directory not found: {args.model}")
+        return
+
     result = run_inference(args.midi, args.model)
+    
+    # Clean up output tokens (only keep until first long repetitive sequence if any)
+    # Actually model should have EOS.
+    
     print("\n--- AlphaTex Output (.tex) ---")
     try:
-        try:
-            from tokens_to_tab import tokens_to_alphatex
-        except ImportError:
-            import sys
-            sys.path.append(os.path.dirname(__file__))
-            from tokens_to_tab import tokens_to_alphatex
-            
+        from tokens_to_tab import tokens_to_alphatex
         print(tokens_to_alphatex(result))
     except Exception as e:
         print(f"Error generating AlphaTex: {e}")
@@ -123,7 +124,10 @@ def main():
     print("\n--- ASCII Tablature (Preview) ---")
     try:
         from tokens_to_tab import tokens_to_ascii
-        print(tokens_to_ascii(result))
+        # Truncate to reasonable length if model looped
+        ascii_tab = tokens_to_ascii(result)
+        lines = ascii_tab.split("\n")
+        print("\n".join([line[:100] for line in lines])) # Show first 100 chars
     except Exception as e:
         pass
     print("--------------------------------------")

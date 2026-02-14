@@ -26,8 +26,9 @@ from transformers import TrainerCallback
 class TrainLoggerCallback(TrainerCallback):
     def __init__(self, log_path):
         self.log_path = log_path
-        with open(self.log_path, "w") as f:
-            f.write("Fretting-Transformer Training Log\n")
+        with open(self.log_path, "a") as f:
+            f.write("\n" + "="*40 + "\n")
+            f.write("RESUMING LOG SESSION\n")
             f.write("="*40 + "\n")
 
     def on_epoch_end(self, args, state, control, **kwargs):
@@ -55,19 +56,17 @@ class TrainLoggerCallback(TrainerCallback):
                     log_str += f"LR: {logs['learning_rate']:.2e} | "
                 f.write(log_str + "\n")
 
+from datasets import load_from_disk
+
 def train():
     TOKENIZER_DIR = "dataset/processed/tab_tokenizer"
-    DATA_DIR = "dataset/processed/individual"
+    CACHE_DIR = "dataset/processed/cached_dataset"
     OUTPUT_DIR = "models/tiny-tab-v1"
     LOG_FILE = "train_log.txt"
 
     # Determine Device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"System Check: Detected {device.upper()} for training.")
-
-    # Dynamic Workers for CPU
-    # Windows has issues with >0 workers in some environments, Cloud T4 (Linux) should use all.
-    num_workers = 0 if os.name == 'nt' else multiprocessing.cpu_count()
 
     # 1. Load Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_DIR)
@@ -76,37 +75,43 @@ def train():
     config = get_tiny_tab_config(vocab_size=len(tokenizer))
     model = T5ForConditionalGeneration(config)
 
-    # 3. Load Datasets
-    # Strictly following paper: max_length=512
-    train_dataset = TabDataset("dataset/processed/train_files.txt", DATA_DIR, tokenizer, max_length=512)
-    val_dataset = TabDataset("dataset/processed/val_files.txt", DATA_DIR, tokenizer, max_length=512)
+    # 3. Load Cached Datasets (Turbo speed optimization)
+    if os.path.exists(CACHE_DIR):
+        print(f"Loading high-speed cached dataset from {CACHE_DIR}")
+        dataset = load_from_disk(CACHE_DIR)
+        train_dataset = dataset["train"]
+        val_dataset = dataset["validation"]
+    else:
+        print(f"Warning: Cache not found at {CACHE_DIR}. Falling back to slow file-by-file loading.")
+        DATA_DIR = "dataset/processed/individual"
+        train_dataset = TabDataset("dataset/processed/train_files.txt", DATA_DIR, tokenizer, max_length=512)
+        val_dataset = TabDataset("dataset/processed/val_files.txt", DATA_DIR, tokenizer, max_length=512)
 
-    # 4. Professional Training Arguments
+    # 4. Professional Training Arguments (Optimized for 6-8h target)
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,
-        per_device_train_batch_size=16, 
-        per_device_eval_batch_size=16,
-        gradient_accumulation_steps=4, # 16 * 4 = 64 Effective Batch Size (Paper Standard)
-        num_train_epochs=50, 
-        learning_rate=5e-4, # Paper Baseline
+        per_device_train_batch_size=32,
+        per_device_eval_batch_size=32,
+        gradient_accumulation_steps=2,
+        num_train_epochs=60, # Increased to 60 for better convergence
+        learning_rate=5e-4, 
         weight_decay=0.01,
         warmup_steps=1000,
-        lr_scheduler_type="cosine", # Professional decay
+        lr_scheduler_type="cosine",
         eval_strategy="epoch", 
         save_strategy="epoch",
         logging_strategy="steps",
-        logging_steps=10,
-        fp16=torch.cuda.is_available(), # Dynamic precision
+        logging_steps=50,
+        fp16=torch.cuda.is_available(),
         report_to="none",
         load_best_model_at_end=True,
         metric_for_best_model="loss",
         greater_is_better=False,
         save_total_limit=2,
-        dataloader_num_workers=num_workers,
-        ddp_find_unused_parameters=False, # Optimization
+        ddp_find_unused_parameters=False,
     )
 
-    # Optimizer: Adafactor (Strictly as per Fretting-Transformer methodology)
+    # Optimizer: Adafactor
     optimizer = Adafactor(
         model.parameters(),
         lr=5e-4,
@@ -122,19 +127,18 @@ def train():
         eval_dataset=val_dataset,
         optimizers=(optimizer, None),
         callbacks=[
-            EarlyStoppingCallback(early_stopping_patience=5),
+            EarlyStoppingCallback(early_stopping_patience=10), # Increased patience for deeper refinement
             TrainLoggerCallback(LOG_FILE)
         ]
     )
 
-    print(f"Executing Training Protocol: Paper Reference ArXiv:2501.07172")
+    print(f"Executing Training Protocol: Resuming for 60 Epochs Total")
     with open(LOG_FILE, "a") as f:
-        f.write(f"Arch: T5 - d_model=128, d_ff=1024, L=3, H=4\n")
-        f.write(f"Effective Batch Size: 64\n")
-        f.write(f"Learning Rate: 5e-4 with Cosine Decay\n")
+        f.write(f"\nRESUMING TRAINING | Target Epochs: 60\n")
         f.write("-" * 40 + "\n")
 
-    trainer.train()
+    # Resume from latest checkpoint
+    trainer.train(resume_from_checkpoint=True)
 
     print("Protocol Complete. Saving Optimized Model Artifacts...")
     model.save_pretrained(os.path.join(OUTPUT_DIR, "final"))

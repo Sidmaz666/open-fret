@@ -12,32 +12,56 @@ set -e # Exit on error
 echo "🚀 Starting Fretting-Transformer Pipeline..."
 
 # 1. Download Dataset
-echo "📥 Step 1: Downloading vldsavelyev/guitar_tab dataset..."
-python scripts/00_download.py
+if [ ! -f "dataset/raw/data.zip" ]; then
+    echo "📥 Step 1: Downloading vldsavelyev/guitar_tab dataset..."
+    python scripts/00_download.py
+else
+    echo "⏭️ Step 1: Dataset already downloaded. Skipping."
+fi
 
 # 2. Process & Augment
-# This applies the paper's techniques: Capo Augmentation (0-7) and Technique Parsing (Bends/Slides).
-echo "⚙️ Step 2: Processing AlphaTex files and applying augmentations..."
-# Clear old data if exists
-rm -rf dataset/processed/*Individual* individuale individuale_individual
-python scripts/01_process.py
+if [ ! -d "dataset/processed/individual" ]; then
+    echo "⚙️ Step 2: Processing AlphaTex files and applying augmentations..."
+    rm -rf dataset/processed/*Individual* individuale individuale_individual
+    python scripts/01_process.py
+else
+    echo "⏭️ Step 2: Data already processed. Skipping."
+fi
 
 # 3. Generate Vocabulary
-# Captures the new TAB_S_F_TECH tokens for expressive guitar playing.
-echo "📖 Step 3: Generating technique-aware vocabulary..."
-python scripts/01.5_generate_vocab.py
+if [ ! -f "dataset/processed/unique_tokens.json" ]; then
+    echo "📖 Step 3: Generating technique-aware vocabulary..."
+    python scripts/01.5_generate_vocab.py
+else
+    echo "📖 Step 3: Vocabulary already exists. Skipping."
+fi
 
 # 4. Tokenization
-echo "🔢 Step 4: Tokenizing the dataset for T5..."
-python scripts/02_tokenize.py
+if [ ! -d "dataset/processed/tab_tokenizer" ]; then
+    echo "🔢 Step 4: Tokenizing the dataset for T5..."
+    python scripts/02_tokenize.py
+else
+    echo "⏭️ Step 4: Tokenizer already exists. Skipping."
+fi
 
 # 5. Split Dataset
-echo "✂️ Step 5: Splitting into Train/Val/Test..."
-python scripts/03_split.py
+if [ ! -f "dataset/processed/train_files.txt" ]; then
+    echo "✂️ Step 5: Splitting into Train/Val/Test..."
+    python scripts/03_split.py
+else
+    echo "⏭️ Step 5: Dataset split already exists. Skipping."
+fi
 
-# 6. Training
-# Starts the T5-Small (reduced) training with paper-aligned hyperparams.
-echo "🎸 Step 6: Initializing Model Training..."
+# 6. Caching (Performance Step)
+if [ ! -d "dataset/processed/cached_dataset" ]; then
+    echo "📦 Step 6: Caching dataset for high-speed training..."
+    python scripts/04_cache_dataset.py
+else
+    echo "⏭️ Step 6: Cached dataset already exists. Skipping."
+fi
+
+# 7. Training
+echo "🎸 Step 7: Initializing Model Training..."
 python scripts/train_model.py
 
 echo "✅ Pipeline Complete! Check the 'models/' directory for checkpoints."

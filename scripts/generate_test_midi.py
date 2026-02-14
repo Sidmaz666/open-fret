@@ -26,6 +26,11 @@ def create_test_midi(filename="test_guitar.mid"):
         (67, 5.0, 5.5), # G4
         (65, 5.5, 6.0), # F4
         (64, 6.0, 7.0), # E4
+        
+        # A C Major Chord
+        (48, 7.5, 9.0), # C3
+        (52, 7.5, 9.0), # E3
+        (55, 7.5, 9.0), # G3
     ]
 
     for pitch, start, end in notes_to_add:
